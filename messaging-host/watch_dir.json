@@ -1,0 +1,7 @@
+{
+  "name": "watch_dir",
+  "description": "Watch a directory for changes",
+  "path": "/home/yuri/projects/somesheet/messaging-host/watch-dir.py",
+  "type": "stdio",
+  "allowed_extensions": ["somesheet@centaur.ath.cx"]
+}
