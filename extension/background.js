@@ -36,12 +36,12 @@ var styles = {};
 var masterEnabled = true;
 
 
-function logMessage(message) {
-  // console.log(message);
+function logMessage(...args) {
+  // console.log(...args);
 }
 
-function logApplied(url, content) {
-  // console.log(url, 'applied', content)
+function logApplied(...args) {
+  // console.log('applied', ...args)
 }
 
 function asyncMap(array, f) {
@@ -52,7 +52,7 @@ function removeStyle(content) {
   return browser.tabs.query({})
   .then(tabs =>
     asyncMap(tabs, tab =>
-      browser.tabs.removeCSS(tab.id, {code: content})
+      browser.tabs.removeCSS(tab.id, {code: content, allFrames: true})
       .catch(e => console.log(tab.url, e))));
 }
 
@@ -76,21 +76,44 @@ function appliesTo(url) { return ([condition, param]) => {
   }
 }}
 
-function applyStyle({content, conditions, enabled}, tab) {
-  return masterEnabled && enabled && conditions.some(appliesTo(tab.url))
-    ? browser.tabs.insertCSS(
-        tab.id, {code: content, runAt: 'document_start'})
-      .then(() => logApplied(tab.url, content))
-      .catch(e => console.log(tab.url, e))
-    : undefined;
+function applyStyleToFrame({content, conditions, enabled},
+                           {tabId, frameId, url},
+                           tabUrl) {
+  return masterEnabled &&
+    enabled &&
+    conditions.some(appliesTo(url)) &&
+    browser.tabs.insertCSS(tabId, {code: content,
+                                   frameId,
+                                   matchAboutBlank: true,
+                                   runAt: 'document_start'})
+    .then(() => logApplied(tabId, tabUrl, frameId, url, content))
+    .catch(e => console.log(tabId, tabUrl, frameId, url, e));
 }
 
-function insertStyle(style) {
-  browser.tabs.query({})
-  .then(tabs =>
-    asyncMap(tabs, tab =>
-      applyStyle(style, tab)))
-  .catch(e => console.log(e));
+function applyStylesToFrame(frame, tabUrl) {
+  return masterEnabled &&
+    asyncMap(Object.values(styles), style =>
+      applyStyleToFrame(style, frame, tabUrl));
+}
+
+function applyStyleToTabs(style) {
+  return masterEnabled &&
+    style.enabled &&
+    browser.tabs.query({})
+    .then(tabs =>
+      asyncMap(tabs, tab =>
+        !tab.discarded &&
+        browser.webNavigation.getAllFrames({tabId: tab.id})
+        .then(frames =>
+          asyncMap(frames, frame =>
+            applyStyleToFrame(style, frame, tab.url)))))
+    .catch(e => console.log(e));
+}
+
+function applyStylesToTabs() {
+  return masterEnabled &&
+    asyncMap(Object.values(styles), style =>
+      applyStyleToTabs(style))
 }
 
 function parseStyle(content) {
@@ -124,12 +147,7 @@ function replaceStyle(name, content) {
   removeStyleByName(name);
   var style = {content, conditions: conditions(content), enabled};
   styles[name] = style;
-  insertStyle(style);
-}
-
-function applyStylesTo(tab) {
-  return asyncMap(Object.values(styles), style =>
-    applyStyle(style, tab))
+  applyStyleToTabs(style);
 }
 
 function disableStyle(name) {
@@ -141,7 +159,7 @@ function disableStyle(name) {
 function enableStyle(name) {
   if (!(name in styles)) return;
   styles[name].enabled = true;
-  insertStyle(styles[name]);
+  applyStyleToTabs(styles[name]);
 }
 
 function disableMaster() {
@@ -151,12 +169,9 @@ function disableMaster() {
 
 function enableMaster() {
   masterEnabled = true;
-  asyncMap(Object.values(styles), insertStyle)
+  applyStylesToTabs();
 }
 
-/*
-Listen for messages from the app.
-*/
 port.onMessage.addListener(message => {
   logMessage(message);
   if ('created' in message) {
@@ -172,12 +187,8 @@ port.onMessage.addListener(message => {
   }
 });
 
-browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url) {
-    applyStylesTo(tab)
-    .catch(e => console.log(changeInfo.url, e));
-  }
-});
+browser.webNavigation.onDOMContentLoaded.addListener(
+  applyStylesToFrame);
 
 /*
 # Protocol

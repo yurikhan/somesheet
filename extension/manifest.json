@@ -2,7 +2,7 @@
   "description": "Apply user-defined stylesheets",
   "manifest_version": 2,
   "name": "Somesheet",
-  "version": "1.0",
+  "version": "1.0.1",
   "icons": {
     "48": "icons/customize-16.svg"
   },
@@ -24,5 +24,10 @@
     "browser_style": true
   },
 
-  "permissions": ["nativeMessaging", "<all_urls>", "tabs"]
+  "permissions": [
+    "nativeMessaging",
+    "<all_urls>",
+    "tabs",
+    "webNavigation"
+  ]
 }
