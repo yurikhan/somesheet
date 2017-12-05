@@ -3,32 +3,28 @@ var port = browser.runtime.connectNative("watch_dir");
 /*
 # Data format
 
-    {String: {'content': String,
-              'enabled': Boolean,
-              'conditions': [[keyword String,
-                              param String], …]}}
+    {String: {'enabled': Boolean,
+              'sections': [{'urls': [String],
+                            'urlPrefixes': [String],
+                            'domains': [String],
+                            'regexps': [String],
+                            'code': String},
+                           …]},
+     …}
 
 The `styles` object keys store style names.
 The corresponding values contain style data.
-
-The `content` property is the style’s CSS source.
 
 `enabled` will be `true`
 unless the style has been disabled via the UI for this session.
 Enabled/disabled status is not stored on disk.
 
-`conditions` is a cache of @-moz-document rule conditions,
-to determine quickly which styles apply to a given URL.
-It will be an array of 0..* elements.
-Each element will be an array
-whose first element is a string
-('url', 'url-prefix', 'domain', 'regexp' or '*').
-For the former four, the second element shall be a string;
-for the latter, the second element is `null` and ignored.
+Each of the `sections` represents either a @-moz-document rule
+or the global rules.
 
-For a global style (one which contains at least one top-level rule
-that is not a @-moz-document rule),
-this will be [['*', null]].
+Global rules (if any) will be in a section
+whose `urls`, `urlPrefixes`, `domains`, and `regexps`
+are all empty.
 
 */
 var styles = {};
@@ -48,45 +44,47 @@ function asyncMap(array, f) {
   return Promise.all(array.map(f));
 }
 
-function removeStyle(content) {
+function removeStyle({sections}) {
   return browser.tabs.query({})
   .then(tabs =>
     asyncMap(tabs, tab =>
-      browser.tabs.removeCSS(tab.id, {code: content, allFrames: true})
+      asyncMap(sections, ({code}) =>
+        browser.tabs.removeCSS(tab.id, {code, allFrames: true}))
       .catch(e => console.log(tab.url, e))));
 }
 
 function removeStyleByName(name) {
   if (name in styles) {
-    removeStyle(styles[name].content);
+    removeStyle(styles[name]);
   }
 }
 
-function appliesTo(url) { return ([condition, param]) => {
-  switch (condition) {
-  case 'url': return url === param;
-  case 'url-prefix': return url.startsWith(param);
-  case 'domain':
+function appliesTo(url) {
+  return ({urls, urlPrefixes, domains, regexps}) => {
     var hostname = new URL(url).hostname;
-    return hostname === param || hostname.endsWith('.' + param);
-  case 'regexp':
-    return RegExp(`^(?:${param})$`).test(url);
-  case '*':
-    return true;
+    return url in urls ||
+      urlPrefixes.some(prefix => url.startsWith(prefix)) ||
+      domains.some(domain =>
+        hostname === domain ||
+        hostname.endsWith('.' + domain)) ||
+      regexps.some(regexp =>
+        RegExp(`^(?:${regexp})$`).test(url)) ||
+      !urls.length && !urlPrefixes.length &&
+      !domains.length && !regexps.length;
   }
-}}
+}
 
-function applyStyleToFrame({content, conditions, enabled},
+function applyStyleToFrame({enabled, sections},
                            {tabId, frameId, url},
                            tabUrl) {
   return masterEnabled &&
     enabled &&
-    conditions.some(appliesTo(url)) &&
-    browser.tabs.insertCSS(tabId, {code: content,
-                                   frameId,
-                                   matchAboutBlank: true,
-                                   runAt: 'document_start'})
-    .then(() => logApplied(tabId, tabUrl, frameId, url, content))
+    asyncMap(sections.filter(appliesTo(url)), section =>
+      browser.tabs.insertCSS(tabId, {code: section.code,
+                                     frameId,
+                                     matchAboutBlank: true,
+                                     runAt: 'document_start'})
+      .then(() => logApplied(tabId, tabUrl, frameId, url, section.code)))
     .catch(e => console.log(tabId, tabUrl, frameId, url, e));
 }
 
@@ -116,36 +114,10 @@ function applyStylesToTabs() {
       applyStyleToTabs(style))
 }
 
-function parseStyle(content) {
-  var doc = document.implementation.createHTMLDocument('');
-  var style = doc.createElement('style');
-  style.textContent = content;
-  doc.head.appendChild(style);
-  return style.sheet;
-}
-
-function conditions(content) {
-  var result = [];
-  var rules = parseStyle(content).cssRules;
-  for (var i = 0; i < rules.length; ++i) {
-    if (rules[i] instanceof CSSMozDocumentRule) {
-      result.push(...
-        rules[i].conditionText.split(/,\s*/)
-        .map(condition =>
-          condition.match(
-            /(url|url-prefix|domain|regexp)\("([^\x22]*)"\)/)
-          .slice(1)));
-    } else {
-      return [['*', null]];
-    }
-  }
-  return result;
-}
-
 function replaceStyle(name, content) {
   var enabled = !(name in styles) || styles[name].enabled;
   removeStyleByName(name);
-  var style = {content, conditions: conditions(content), enabled};
+  var style = {enabled, sections: splitCSS(content)};
   styles[name] = style;
   applyStyleToTabs(style);
 }
@@ -187,8 +159,8 @@ port.onMessage.addListener(message => {
   }
 });
 
-browser.webNavigation.onDOMContentLoaded.addListener(
-  applyStylesToFrame);
+browser.webNavigation.onDOMContentLoaded.addListener(details =>
+  applyStylesToFrame(details));
 
 /*
 # Protocol
@@ -235,8 +207,8 @@ browser.runtime.onMessage.addListener(message => {
     return browser.tabs.query({active: true, currentWindow: true})
       .then(([tab]) => {
         var applicableStyles = Object.entries(styles)
-          .filter(([name, {conditions, enabled}]) =>
-            conditions.some(appliesTo(tab.url)))
+          .filter(([name, {enabled, sections}]) =>
+            sections.some(appliesTo(tab.url)))
           .map(([name, {enabled}]) => ({name, enabled}));
         applicableStyles.sort((a, b) =>
           a.name < b.name ? -1 :

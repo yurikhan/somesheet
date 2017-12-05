@@ -15,7 +15,10 @@
   },
 
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js",
+      "cssparser.js"
+    ]
   },
 
   "browser_action": {
