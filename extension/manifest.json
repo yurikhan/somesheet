@@ -2,15 +2,14 @@
   "description": "Apply user-defined stylesheets",
   "manifest_version": 2,
   "name": "Somesheet",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "icons": {
     "48": "icons/customize-16.svg"
   },
 
   "applications": {
     "gecko": {
-      "id": "somesheet@centaur.ath.cx",
-      "strict_min_version": "57.0"
+      "id": "somesheet@centaur.ath.cx"
     }
   },
 

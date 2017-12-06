@@ -159,11 +159,21 @@ port.onMessage.addListener(message => {
   }
 });
 
-browser.webNavigation.onDOMContentLoaded.addListener(details =>
-  applyStylesToFrame(details));
-
 /*
 # Protocol
+
+## Frame initialization
+
+0. As soon as a page starts loading in a frame,
+   the content script is injected.
+
+1. The content script sends an apply request:
+
+        {'applyStyles': {}}
+
+2. The background script applies the styles
+   relevant to the sender’s URL. No response is sent.
+
 
 ## Popup initialization
 
@@ -202,8 +212,14 @@ To enable or disable a style, the popup sends:
 
     {'enableStyle': {'name': String, 'enabled': Boolean}}
 */
-browser.runtime.onMessage.addListener(message => {
-  if ('populate' in message) {
+browser.runtime.onMessage.addListener((message, sender) => {
+  console.log('got message', message, 'from', sender);
+  if ('applyStyles' in message) {
+    return applyStylesToFrame({tabId: sender.tab.id,
+                               frameId: sender.frameId,
+                               url: sender.url},
+                               sender.tab.url);
+  } else if ('populate' in message) {
     return browser.tabs.query({active: true, currentWindow: true})
       .then(([tab]) => {
         var applicableStyles = Object.entries(styles)
@@ -222,4 +238,17 @@ browser.runtime.onMessage.addListener(message => {
   } else if ('enableMaster' in message) {
     (message.enableMaster ? enableMaster : disableMaster)();
   }
+});
+
+// The content script has to be registered dynamically
+// because if registered via manifest.json
+// it will get injected into every existing tab on extension load
+// and try to send us messages before we start listening for them,
+// which causes annoying connection error messages in the console.
+browser.contentScripts.register({
+  matches: ["<all_urls>"],
+  allFrames: true,
+  matchAboutBlank: true,
+  runAt: "document_start",
+  js: [{file: "content.js"}]
 });

@@ -28,7 +28,7 @@ It is a bit like Stylish, Stylus, and xStyle.
 
 # What it needs to work
 
-* Firefox 57 or later.
+* Firefox 59 or later.
 * Python 3.5 or later.
 * The `watchdog` Python library
   (available in Ubuntu as `python3-watchdog` package).
@@ -46,6 +46,37 @@ and all its subdirectories.
 It does not let the extension to write any files.
 In fact, after being started,
 it does not accept any requests from the extension.
+
+
+# Permissions explanation
+
+When you install the extension,
+Firefox will ask you to confirm you give it some permissions.
+Here’s why Somesheet needs them:
+
+## Access your data for all websites
+
+Somesheet needs this permission to apply styles.
+
+## Exchange messages with programs other than Firefox
+
+The “other program” is the native messaging host described above.
+It is needed in order to watch for style changes
+and load them into Somesheet.
+
+## Access browser tabs
+
+Somesheet needs to know the URL of each tab,
+in order to decide whether to apply your styles to it,
+and to present a menu of styles that are applicable.
+(It could, in principle, apply each style to each tab blindly,
+but it would probably have worse performance.)
+
+## Access browser activity during navigation
+
+For some reason, that’s the permission we have to ask for
+if we want to obtain all the frames in a tab.
+And we want to, so as to apply styles to each frame.
 
 
 # How to install
