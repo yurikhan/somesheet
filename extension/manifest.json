@@ -2,7 +2,7 @@
   "description": "Apply user-defined stylesheets",
   "manifest_version": 2,
   "name": "Somesheet",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "icons": {
     "48": "icons/customize-16.svg"
   },
